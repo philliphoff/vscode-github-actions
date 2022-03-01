@@ -28,6 +28,7 @@ import { registerReRunWorkflowRun } from "./commands/rerunWorkflowRun";
 import { registerTriggerWorkflowRun } from "./commands/triggerWorkflowRun";
 import { registerUnPinWorkflow } from "./commands/unpinWorkflow";
 import { registerUpdateSecret } from "./commands/secrets/updateSecret";
+import { registerCreateWorkflow } from "./commands/createWorkflow";
 
 export function activate(context: vscode.ExtensionContext) {
   initLogger();
@@ -75,6 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Commands
   //
 
+  registerCreateWorkflow(context);
   registerOpenWorkflowRun(context);
   registerOpenWorkflowFile(context);
   registerOpenWorkflowRunLogs(context);

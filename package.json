@@ -90,6 +90,11 @@
         }
       },
       {
+        "command": "github-actions.workflow.create",
+        "category": "GitHub Actions",
+        "title": "Create workflow"
+      },
+      {
         "command": "github-actions.workflow.run.open",
         "category": "GitHub Actions",
         "title": "Open workflow run",
