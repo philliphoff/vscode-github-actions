@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { GitHubRepoContext } from "../../git/repository";
 import { RepoSecret } from "../../model";
-import { encodeSecret } from "../../secrets";
+import { setSecret } from "../../secrets";
 
 interface UpdateSecretCommandArgs {
   gitHubRepoContext: GitHubRepoContext;
@@ -25,22 +25,7 @@ export function registerUpdateSecret(context: vscode.ExtensionContext) {
         }
 
         try {
-          const keyResponse =
-            await gitHubContext.client.actions.getRepoPublicKey({
-              owner: gitHubContext.owner,
-              repo: gitHubContext.name,
-            });
-
-          const key_id = keyResponse.data.key_id;
-          const key = keyResponse.data.key;
-
-          await gitHubContext.client.actions.createOrUpdateRepoSecret({
-            owner: gitHubContext.owner,
-            repo: gitHubContext.name,
-            secret_name: secret.name,
-            key_id: key_id,
-            encrypted_value: encodeSecret(key, value),
-          });
+          await setSecret(gitHubContext, secret.name, value);
         } catch (e) {
           vscode.window.showErrorMessage(e.message);
         }

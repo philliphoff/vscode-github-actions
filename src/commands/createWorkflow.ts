@@ -1,11 +1,17 @@
 import * as vscode from "vscode";
 
-import { GitHubRepoContext } from "../git/repository";
+import { getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
+import { setSecret } from "../secrets";
 
 enum WorkflowCategory {
     Automation,
     ContinuousIntegration,
     Deployment
+}
+
+interface WorkflowCreationContext {
+  gitHubRepoContext: GitHubRepoContext | undefined;
+  workflowUri: vscode.Uri;
 }
 
 interface WorkflowTemplate {
@@ -14,6 +20,8 @@ interface WorkflowTemplate {
     description: string;
     templateFileName: string;
     title: string;
+
+    onCreate?: (context: WorkflowCreationContext) => Promise<void>;
 }
 
 const workflowTemplates: WorkflowTemplate[] = [
@@ -29,7 +37,9 @@ const workflowTemplates: WorkflowTemplate[] = [
       category: WorkflowCategory.Deployment,
       description: "Build a .NET Core project and deploy it to an Azure Web App.",
       templateFileName: "azure-webapps-dotnet-core.yml",
-      title: "Deploy a .NET Core app to an Azure Web App"
+      title: "Deploy a .NET Core app to an Azure Web App",
+
+      onCreate: onCreateAzureWebApp
   },
   {
       author: "Microsoft Azure",
@@ -42,6 +52,17 @@ const workflowTemplates: WorkflowTemplate[] = [
 
 interface CreateWorkflowCommandArgs {
   gitHubRepoContext: GitHubRepoContext;
+}
+
+async function onCreateAzureWebApp(context: WorkflowCreationContext): Promise<void> {
+  if (!context.gitHubRepoContext) {
+    // TODO: Tell user to manually set secret.
+    return;
+  }
+  
+  const publishProfileSecretName = "AZURE_WEBAPP_PUBLISH_PROFILE";
+
+  await setSecret(context.gitHubRepoContext, publishProfileSecretName, "MY SECRET");
 }
 
 async function selectWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
@@ -65,9 +86,9 @@ export function registerCreateWorkflow(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "github-actions.workflow.create",
       async (args?: CreateWorkflowCommandArgs) => {
-        const { gitHubRepoContext } = args ?? {};
+        let { gitHubRepoContext } = args ?? {};
 
-        const items = workflowTemplates.map(template => ({ label: template.title, description: template.description, templateFileName: template.templateFileName }));
+        const items = workflowTemplates.map(template => ({ label: template.title, description: template.description, template: template }));
 
         const selectedItem = await vscode.window.showQuickPick(items);
 
@@ -82,7 +103,7 @@ export function registerCreateWorkflow(context: vscode.ExtensionContext) {
         //     });
 
         const extensionUri = context.extensionUri;
-        const workflowTemplateUri = vscode.Uri.joinPath(extensionUri, "resources", "workflows", selectedItem.templateFileName);
+        const workflowTemplateUri = vscode.Uri.joinPath(extensionUri, "resources", "workflows", selectedItem.template.templateFileName);
 
         const workspaceFolder = await selectWorkspaceFolder();
 
@@ -90,13 +111,36 @@ export function registerCreateWorkflow(context: vscode.ExtensionContext) {
           return;
         }
 
+        if (!gitHubRepoContext) {
+          gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceFolder.uri);
+        }
+
+        const templateFileName = await vscode.window.showInputBox(
+          {
+            prompt: "Enter a filename for the new workflow",
+            placeHolder: selectedItem.template.templateFileName
+          });
+
+        if (!templateFileName) {
+          return;
+        }
+
         const githubWorkflowsUri = vscode.Uri.joinPath(workspaceFolder.uri, ".github", "workflows");
-        const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, selectedItem.templateFileName);
+        const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, templateFileName);
 
         // TODO: Account for name collisions.
 
         await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
 
         await vscode.workspace.fs.copy(workflowTemplateUri, workflowUri);
+
+        if (selectedItem.template.onCreate) {
+          await selectedItem.template.onCreate(
+            {
+              gitHubRepoContext,
+              workflowUri
+            }
+          );
+        }
       }));
 }
