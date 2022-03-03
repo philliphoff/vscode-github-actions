@@ -62,14 +62,16 @@ async function onCreateAzureWebApp(context: WorkflowCreationContext): Promise<vo
   
   const publishProfileSecretName = "AZURE_WEBAPP_PUBLISH_PROFILE";
 
+  // TODO: Accommodate existing secret.
+
   await setSecret(context.gitHubRepoContext, publishProfileSecretName, "MY SECRET");
 }
 
-async function selectWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
+async function selectWorkspace(): Promise<vscode.Uri | undefined> {
   if (vscode.workspace.workspaceFolders === undefined || vscode.workspace.workspaceFolders.length === 0) {
     throw new Error("No workspace folder is open");
   } else if (vscode.workspace.workspaceFolders.length === 1) {
-    return vscode.workspace.workspaceFolders[0];
+    return vscode.workspace.workspaceFolders[0].uri;
   } else {
     const selectedWorkspace = await vscode.window.showQuickPick(
       vscode.workspace.workspaceFolders.map(folder => ({ label: folder.name, folder })),
@@ -77,7 +79,7 @@ async function selectWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefin
         title: "Select a workspace folder to create the workflow in"
       });
 
-    return selectedWorkspace?.folder;
+    return selectedWorkspace?.folder?.uri;
   }
 }
 
@@ -105,27 +107,27 @@ export function registerCreateWorkflow(context: vscode.ExtensionContext) {
         const extensionUri = context.extensionUri;
         const workflowTemplateUri = vscode.Uri.joinPath(extensionUri, "resources", "workflows", selectedItem.template.templateFileName);
 
-        const workspaceFolder = await selectWorkspaceFolder();
+        const workspaceUri = gitHubRepoContext?.workspaceUri ?? await selectWorkspace();
 
-        if (!workspaceFolder) {
+        if (!workspaceUri) {
           return;
         }
 
         if (!gitHubRepoContext) {
-          gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceFolder.uri);
+          gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceUri);
         }
 
         const templateFileName = await vscode.window.showInputBox(
           {
             prompt: "Enter a filename for the new workflow",
-            placeHolder: selectedItem.template.templateFileName
+            value: selectedItem.template.templateFileName
           });
 
         if (!templateFileName) {
           return;
         }
 
-        const githubWorkflowsUri = vscode.Uri.joinPath(workspaceFolder.uri, ".github", "workflows");
+        const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
         const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, templateFileName);
 
         // TODO: Account for name collisions.

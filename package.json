@@ -92,7 +92,8 @@
       {
         "command": "github-actions.workflow.create",
         "category": "GitHub Actions",
-        "title": "Create workflow"
+        "title": "Create workflow",
+        "icon": "$(github-action)"
       },
       {
         "command": "github-actions.workflow.run.open",
@@ -215,6 +216,15 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "github-actions.workflow.create",
+          "group": "inline",
+          "when": "viewItem =~ /wf-repo/"
+        },
+        {
+          "command": "github-actions.workflow.create",
+          "when": "viewItem =~ /wf-repo/"
+        },
         {
           "command": "github-actions.explorer.openWorkflowFile",
           "when": "viewItem =~ /workflow/"
