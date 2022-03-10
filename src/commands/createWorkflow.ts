@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
 import { setSecret } from "../secrets";
+import { createWorkflowFromTemplate } from "../workflow/templates";
 
 enum WorkflowCategory {
     Automation,
@@ -67,82 +68,11 @@ async function onCreateAzureWebApp(context: WorkflowCreationContext): Promise<vo
   await setSecret(context.gitHubRepoContext, publishProfileSecretName, "MY SECRET");
 }
 
-async function selectWorkspace(): Promise<vscode.Uri | undefined> {
-  if (vscode.workspace.workspaceFolders === undefined || vscode.workspace.workspaceFolders.length === 0) {
-    throw new Error("No workspace folder is open");
-  } else if (vscode.workspace.workspaceFolders.length === 1) {
-    return vscode.workspace.workspaceFolders[0].uri;
-  } else {
-    const selectedWorkspace = await vscode.window.showQuickPick(
-      vscode.workspace.workspaceFolders.map(folder => ({ label: folder.name, folder })),
-      {
-        title: "Select a workspace folder to create the workflow in"
-      });
-
-    return selectedWorkspace?.folder?.uri;
-  }
-}
-
 export function registerCreateWorkflow(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "github-actions.workflow.create",
       async (args?: CreateWorkflowCommandArgs) => {
-        let { gitHubRepoContext } = args ?? {};
-
-        const items = workflowTemplates.map(template => ({ label: template.title, description: template.description, template: template }));
-
-        const selectedItem = await vscode.window.showQuickPick(items);
-
-        if (!selectedItem) {
-          return;
-        }
-
-        // const name = await vscode.window.showInputBox(
-        //     {
-        //         prompt: "Enter a name for the new workflow",
-        //         placeHolder: "ci"
-        //     });
-
-        const extensionUri = context.extensionUri;
-        const workflowTemplateUri = vscode.Uri.joinPath(extensionUri, "resources", "workflows", selectedItem.template.templateFileName);
-
-        const workspaceUri = gitHubRepoContext?.workspaceUri ?? await selectWorkspace();
-
-        if (!workspaceUri) {
-          return;
-        }
-
-        if (!gitHubRepoContext) {
-          gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceUri);
-        }
-
-        const templateFileName = await vscode.window.showInputBox(
-          {
-            prompt: "Enter a filename for the new workflow",
-            value: selectedItem.template.templateFileName
-          });
-
-        if (!templateFileName) {
-          return;
-        }
-
-        const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
-        const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, templateFileName);
-
-        // TODO: Account for name collisions.
-
-        await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
-
-        await vscode.workspace.fs.copy(workflowTemplateUri, workflowUri);
-
-        if (selectedItem.template.onCreate) {
-          await selectedItem.template.onCreate(
-            {
-              gitHubRepoContext,
-              workflowUri
-            }
-          );
-        }
+        await createWorkflowFromTemplate(args?.gitHubRepoContext);
       }));
 }

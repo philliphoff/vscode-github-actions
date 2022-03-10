@@ -29,12 +29,15 @@ import { registerTriggerWorkflowRun } from "./commands/triggerWorkflowRun";
 import { registerUnPinWorkflow } from "./commands/unpinWorkflow";
 import { registerUpdateSecret } from "./commands/secrets/updateSecret";
 import { registerCreateWorkflow } from "./commands/createWorkflow";
+import { CurrentGitHubActionsApiManager } from "./api/extension/currentGitHubActionsApiManager";
+import { registerWorkflowTemplates } from "./workflow/templates";
 
 export function activate(context: vscode.ExtensionContext) {
   initLogger();
   log("Activating GitHub Actions extension...");
 
   // Prefetch git repository origin url
+  // TODO: Should this be awaited (or is it safe for reentrancy)?
   getGitHubContext();
 
   initResources(context);
@@ -127,4 +130,12 @@ export function activate(context: vscode.ExtensionContext) {
   init(context);
 
   log("...initialized");
+
+  const apiManager = new CurrentGitHubActionsApiManager();
+
+  // NOTE: Don't wait for registration to complete.
+  // TODO: Consider just-in-time registration?
+  !registerWorkflowTemplates();
+
+  return apiManager;
 }
