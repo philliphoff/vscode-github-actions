@@ -9,36 +9,45 @@ const definitions: WorkflowTemplateDefinition[] = [];
 let areStarterWorkflowsRegistered = false;
 
 async function ensureStarterWorkflowsRegistered(): Promise<void> {
-    if (!areStarterWorkflowsRegistered) {
-        // TODO: Be passed context as argument.
-        const gitHubContext = await getGitHubContext();
-
-        if (!gitHubContext || gitHubContext.repos.length === 0) {
-            return;
-        }
-
-        // TODO: Do we need the context to be repo-specific?
-        //       What if the repo is not linked to GitHub yet?
-        const client = gitHubContext.repos[0].client;
-
-        const starterWorkflowTemplates = await getStarterWorkflowTemplates(client);
-        
-        starterWorkflowTemplates.forEach(
-            template => {
-                registerWorkflowTemplate({
-                    description: template.properties.description,
-                    group: template.group,
-                    id: template.id,
-                    label: template.properties.name,
-        
-                    onCreate: async (context: WorkflowCreationContext) => {
-                        await context.createWorkflowFromContent(template.suggestedFileName, template.content);
-                    }
-                })        
-            });
-        
-        areStarterWorkflowsRegistered = true;
+    if (areStarterWorkflowsRegistered) {
+        return;
     }
+
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Getting GitHub starter workflows...'
+        },
+        async () => {
+            // TODO: Be passed context as argument.
+            const gitHubContext = await getGitHubContext();
+            
+            if (!gitHubContext || gitHubContext.repos.length === 0) {
+                return;
+            }
+            
+            // TODO: Do we need the context to be repo-specific?
+            //       What if the repo is not linked to GitHub yet?
+            const client = gitHubContext.repos[0].client;
+            
+            const starterWorkflowTemplates = await getStarterWorkflowTemplates(client);
+            
+            starterWorkflowTemplates.forEach(
+                template => {
+                    registerWorkflowTemplate({
+                        description: template.properties.description,
+                        group: template.group,
+                        id: template.id,
+                        label: template.properties.name,
+                        
+                        onCreate: async (context: WorkflowCreationContext) => {
+                            await context.createWorkflowFromContent(template.suggestedFileName, template.content);
+                        }
+                    })        
+                });
+                
+                areStarterWorkflowsRegistered = true;
+        });
 }
 
 export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
