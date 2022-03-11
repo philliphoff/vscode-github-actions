@@ -82,18 +82,11 @@ async function getWorkflowTemplate(templateId: string | undefined): Promise<Work
         return template;
     } else {
         // TODO: Have well known groups (to protect against changes to ID or label over time)?
-        const groups = definitions.reduce<{ [key: string]: string }>(
+        const groupedTemplates = definitions.reduce<{ [key: string]: { id: string, label: string, templates: WorkflowTemplateDefinition[] } }>(
             (previous, current) => {
-                previous[current.group.id] = current.group.label;
-                return previous;
-            },
-            {});
+                const group = previous[current.group.id] || { ...current.group, templates: [] };
 
-        const groupedItems = definitions.reduce<{ [key: string]: WorkflowTemplateDefinition[] }>(
-            (previous, current) => {
-                const group = previous[current.group.id] || [];
-
-                group.push(current);
+                group.templates.push(current);
 
                 previous[current.group.id] = group;
 
@@ -103,15 +96,18 @@ async function getWorkflowTemplate(templateId: string | undefined): Promise<Work
 
         const items: (vscode.QuickPickItem & { template?: WorkflowTemplateDefinition })[] =
             Object
-                .keys(groupedItems)
-                .map(groupId => {
-                    var group = groupedItems[groupId];
+                .values(groupedTemplates)
+                .sort((a, b) => a.label.localeCompare(b.label))
+                .map(group => {
+                    var separator: vscode.QuickPickItem = { label: group.label, kind: vscode.QuickPickItemKind.Separator };
 
-                    var separator: vscode.QuickPickItem = { label: groups[groupId], kind: vscode.QuickPickItemKind.Separator };
-
-                    return [separator].concat(group.map(template => ({ label: template.label, detail: template.description, template })));
+                    return [separator].concat(
+                        group
+                            .templates
+                            .sort((a, b) => a.label.localeCompare(b.label))
+                            .map(template => ({ label: template.label, detail: template.description, template })));
                 })
-                .flatMap(group => group);
+                .flatMap(groupItems => groupItems);
 
        
         const selectedItem = await vscode.window.showQuickPick(items);
