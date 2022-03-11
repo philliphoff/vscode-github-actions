@@ -1,42 +1,44 @@
 import * as vscode from 'vscode';
-import { Octokit } from "@octokit/rest";
-import path = require("path");
-import { GitHubActionsApi, WorkflowCreationContext, WorkflowTemplateDefinition } from "../api/extension/api";
+import { WorkflowCreationContext, WorkflowTemplateDefinition } from "../api/extension/api";
 import { getGitHubContext, getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
 import { setSecret } from '../secrets';
-
-interface GitHubDirectoryEntry {
-    name: string;
-    path: string;
-    type: 'directory' | 'file';
-}
-
-interface GitHubFileContent {
-    data: {
-        content?: string | undefined;
-    }
-}
-
-interface GitHubDirectoryContent {
-    data: GitHubDirectoryEntry[];
-}
-
-interface GitHubWorkflowTemplateProperties {
-    name: string;
-    description: string;
-    creator: string;
-    iconName: string;
-    categories: string[];
-}
-
-interface GitHubWorkflowTemplate {
-    id: string;
-    properties: GitHubWorkflowTemplateProperties;
-    content: string;
-    suggestedFileName: string;
-}
+import { getStarterWorkflowTemplates } from './starterWorkflows';
 
 const definitions: WorkflowTemplateDefinition[] = [];
+
+let areStarterWorkflowsRegistered = false;
+
+async function ensureStarterWorkflowsRegistered(): Promise<void> {
+    if (!areStarterWorkflowsRegistered) {
+        // TODO: Be passed context as argument.
+        const gitHubContext = await getGitHubContext();
+
+        if (!gitHubContext || gitHubContext.repos.length === 0) {
+            return;
+        }
+
+        // TODO: Do we need the context to be repo-specific?
+        //       What if the repo is not linked to GitHub yet?
+        const client = gitHubContext.repos[0].client;
+
+        const starterWorkflowTemplates = await getStarterWorkflowTemplates(client);
+        
+        starterWorkflowTemplates.forEach(
+            template => {
+                registerWorkflowTemplate({
+                    id: template.id,
+                    title: template.properties.name,
+                    description: template.properties.description,
+        
+                    onCreate: async (context: WorkflowCreationContext) => {
+                        await context.createWorkflowFromContent(template.suggestedFileName, template.content);
+                    }
+                })        
+            });
+        
+        areStarterWorkflowsRegistered = true;
+    }
+}
 
 export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
     definitions.push(definition);
@@ -54,28 +56,46 @@ export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition)
 
 async function selectWorkspace(): Promise<vscode.Uri | undefined> {
     if (vscode.workspace.workspaceFolders === undefined || vscode.workspace.workspaceFolders.length === 0) {
-      throw new Error("No workspace folder is open");
+        throw new Error("No workspace folder is open");
     } else if (vscode.workspace.workspaceFolders.length === 1) {
-      return vscode.workspace.workspaceFolders[0].uri;
+        return vscode.workspace.workspaceFolders[0].uri;
     } else {
-      const selectedWorkspace = await vscode.window.showQuickPick(
+        const selectedWorkspace = await vscode.window.showQuickPick(
         vscode.workspace.workspaceFolders.map(folder => ({ label: folder.name, folder })),
         {
-          title: "Select a workspace folder to create the workflow in"
+            title: "Select a workspace folder to create the workflow in"
         });
-  
-      return selectedWorkspace?.folder?.uri;
+
+        return selectedWorkspace?.folder?.uri;
     }
-  }
+}
+
+async function getWorkflowTemplate(templateId: string | undefined): Promise<WorkflowTemplateDefinition | undefined> {
+    if (templateId) {
+        const template = definitions.find(definition => definition.id === templateId);
+
+        if (!template) {
+            throw new Error(`No template '${templateId}' is registered.`);
+        }
+
+        return template;
+    } else {
+        const items = definitions.map(template => ({ label: template.title, detail: template.description, template }));
+        
+        const selectedItem = await vscode.window.showQuickPick(items);
+        
+        return selectedItem?.template;
+    }
+}
 
 export async function createWorkflowFromTemplate(context?: GitHubRepoContext, templateId?: string, callerContext?: never): Promise<void> {
+    await ensureStarterWorkflowsRegistered();
+
     let gitHubRepoContext = context;
 
-    const items = definitions.map(template => ({ label: template.title, description: template.description, template: template }));
+    const template = await getWorkflowTemplate(templateId);
 
-    const selectedItem = await vscode.window.showQuickPick(items);
-
-    if (!selectedItem) {
+    if (!template) {
       return;
     }
 
@@ -89,8 +109,8 @@ export async function createWorkflowFromTemplate(context?: GitHubRepoContext, te
       gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceUri);
     }
 
-    if (selectedItem.template.onCreate) {
-        await selectedItem.template.onCreate({
+    if (template.onCreate) {
+        await template.onCreate({
             callerContext,
             createWorkflowFromContent: async (suggestedFileName, content) => {
                 const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
@@ -124,104 +144,4 @@ export async function createWorkflowFromTemplate(context?: GitHubRepoContext, te
             }
         });
     }
-}
-
-export async function registerWorkflowTemplates(): Promise<void> {
-    // TODO: Get list of folders/files in actions repo (if cache expired).
-
-    // TODO: Be passed context as argument.
-    const gitHubContext = await getGitHubContext();
-
-    if (!gitHubContext || gitHubContext.repos.length === 0) {
-        return;
-    }
-
-    // TODO: Do we need the context to be repo-specific?
-    //       What if the repo is not linked to GitHub yet?
-    const gitHubRepoContext = gitHubContext.repos[0];
-
-    const owner = 'actions';
-    const repo = 'starter-workflows';
-
-    const content = await gitHubRepoContext.client.repos.getContent(
-        {
-            owner,
-            repo,
-            path: 'deployments/properties'
-        }) as GitHubDirectoryContent;
-
-    function isFile(entry: GitHubDirectoryEntry): boolean {
-        return entry.type === 'file';
-    }
-
-    const files = content.data.filter(isFile);
-
-    function isValidTemplate(template: GitHubWorkflowTemplate | undefined): template is GitHubWorkflowTemplate {
-        return template !== undefined;
-    }
-
-    const downloadedTemplates = await Promise.all(files.map(file => getWorkflowTemplate(gitHubRepoContext.client, owner, repo, file)));
-
-    const templates = downloadedTemplates.filter(isValidTemplate);
-
-    templates.forEach(template => {
-        registerWorkflowTemplate({
-            id: template.id,
-            title: template.properties.name,
-            description: template.properties.description,
-
-            onCreate: async (context: WorkflowCreationContext) => {
-                await context.createWorkflowFromContent(template.suggestedFileName, template.content);
-            }
-        });
-    });
-
-    // TODO: Convert to local model.
-    // TODO: Cache local model.
-    // TODO: Register each template in the model.
-}
-
-async function getWorkflowTemplate(client: Octokit, owner: string, repo: string, file: GitHubDirectoryEntry): Promise<GitHubWorkflowTemplate | undefined> {
-    const propertiesContent = await getFileContent(client, owner, repo, file.path);
-
-    if (!propertiesContent) {
-        return undefined;
-    }
-
-    const properties = JSON.parse(propertiesContent) as GitHubWorkflowTemplateProperties;
-
-    const basename = path.basename(file.name, '.properties.json');
-
-    const templateDir = path.dirname(path.dirname(file.path));
-    const templatePath = path.join(templateDir, basename + '.yml');
-
-    // TODO: Wait until needed (i.e. store path in model).
-    const templateContent = await getFileContent(client, owner, repo, templatePath);
-
-    if (!templateContent) {
-        return undefined;
-    }
-
-    return {
-        content: templateContent,
-        id: path.join(templateDir, basename),
-        properties,
-        suggestedFileName: basename + '.yml'
-    };
-}
-
-async function getFileContent(client: Octokit, owner: string, repo: string, path: string): Promise<string | undefined> {
-    const content = await client.repos.getContent(
-        {
-            owner,
-            repo,
-            path
-        }) as GitHubFileContent;
-
-    if (!content.data?.content) {
-        // TODO: Log unexpected lack of content.
-        return undefined;
-    }
-
-    return Buffer.from(content.data.content, 'base64').toString('utf8');
 }

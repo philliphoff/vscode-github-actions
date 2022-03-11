@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { registerWorkflowTemplate } from "../../workflow/templates";
+import { createWorkflowFromTemplate, registerWorkflowTemplate } from "../../workflow/templates";
 import { GitHubActionsApi, WorkflowTemplateDefinition } from "./api";
 
 export class CurrentGitHubActionsApi implements GitHubActionsApi {
@@ -8,6 +8,6 @@ export class CurrentGitHubActionsApi implements GitHubActionsApi {
     }
 
     createWorkflowFromTemplate(templateId: string, callerContext?: never): Promise<void> {
-        return this.createWorkflowFromTemplate(templateId, callerContext);
+        return createWorkflowFromTemplate(undefined, templateId, callerContext);
     }
 }

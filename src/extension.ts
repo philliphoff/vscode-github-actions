@@ -30,7 +30,6 @@ import { registerUnPinWorkflow } from "./commands/unpinWorkflow";
 import { registerUpdateSecret } from "./commands/secrets/updateSecret";
 import { registerCreateWorkflow } from "./commands/createWorkflow";
 import { CurrentGitHubActionsApiManager } from "./api/extension/currentGitHubActionsApiManager";
-import { registerWorkflowTemplates } from "./workflow/templates";
 
 export function activate(context: vscode.ExtensionContext) {
   initLogger();
@@ -132,10 +131,6 @@ export function activate(context: vscode.ExtensionContext) {
   log("...initialized");
 
   const apiManager = new CurrentGitHubActionsApiManager();
-
-  // NOTE: Don't wait for registration to complete.
-  // TODO: Consider just-in-time registration?
-  !registerWorkflowTemplates();
 
   return apiManager;
 }
