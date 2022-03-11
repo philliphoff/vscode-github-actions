@@ -26,9 +26,10 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
         starterWorkflowTemplates.forEach(
             template => {
                 registerWorkflowTemplate({
-                    id: template.id,
-                    title: template.properties.name,
                     description: template.properties.description,
+                    group: template.group,
+                    id: template.id,
+                    label: template.properties.name,
         
                     onCreate: async (context: WorkflowCreationContext) => {
                         await context.createWorkflowFromContent(template.suggestedFileName, template.content);
@@ -80,7 +81,7 @@ async function getWorkflowTemplate(templateId: string | undefined): Promise<Work
 
         return template;
     } else {
-        const items = definitions.map(template => ({ label: template.title, detail: template.description, template }));
+        const items = definitions.map(template => ({ label: template.label, detail: template.description, template }));
         
         const selectedItem = await vscode.window.showQuickPick(items);
         

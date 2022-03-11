@@ -22,9 +22,10 @@ export interface WorkflowCreationContext {
 }
 
 export interface WorkflowTemplateDefinition {
-    readonly id: string;
-    readonly title: string;
     readonly description: string;
+    readonly group: { id: string, label: string};
+    readonly id: string;
+    readonly label: string;
 
     onCreate?: (context: WorkflowCreationContext) => Promise<void>;
 }

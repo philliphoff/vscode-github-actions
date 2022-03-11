@@ -2,37 +2,50 @@ import { Octokit } from "@octokit/rest";
 import path = require("path");
 
 interface GitHubDirectoryEntry {
-    name: string;
-    path: string;
-    type: 'directory' | 'file';
+    readonly name: string;
+    readonly path: string;
+    readonly type: 'directory' | 'file';
 }
 
 interface GitHubFileContent {
-    data: {
-        content?: string | undefined;
+    readonly data: {
+        readonly content?: string | undefined;
     }
 }
 
 interface GitHubDirectoryContent {
-    data: GitHubDirectoryEntry[];
+    readonly data: GitHubDirectoryEntry[];
 }
 
 interface GitHubWorkflowTemplateProperties {
-    name: string;
-    description: string;
-    creator: string;
-    iconName: string;
-    categories: string[];
+    readonly name: string;
+    readonly description: string;
+    readonly creator: string;
+    readonly iconName: string;
+    readonly categories: string[];
+}
+
+interface GitHubWorkflowTemplateGroup {
+    readonly id: string;
+    readonly label: string;
 }
 
 interface GitHubWorkflowTemplate {
-    id: string;
-    properties: GitHubWorkflowTemplateProperties;
-    content: string;
-    suggestedFileName: string;
+    readonly content: string;
+    readonly group: GitHubWorkflowTemplateGroup;
+    readonly id: string;
+    readonly properties: GitHubWorkflowTemplateProperties;
+    readonly suggestedFileName: string;
 }
 
 let starterWorkflowTemplates: GitHubWorkflowTemplate[] | undefined;
+
+const groups = [
+    { id: 'ci', label: 'Continuous Integration' },
+    { id: 'deployments', label: 'Deployment' },
+    { id: 'automation', label: 'Automation' },
+    { id: 'code-scanning', label: 'Code Scanning' }
+];
 
 export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitHubWorkflowTemplate[]> {
     if (starterWorkflowTemplates) {
@@ -41,6 +54,20 @@ export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitH
 
     // TODO: Refresh only if cache expired.
 
+    const allTemplates = await Promise.all(groups.map(group => getStarterWorkflowTemplatesForGroup(client, group)));
+
+    starterWorkflowTemplates = allTemplates.flatMap(templates => templates);
+
+    // TODO: Cache local model.
+
+    return starterWorkflowTemplates;
+}
+
+async function getStarterWorkflowTemplatesForGroup(client: Octokit, group: GitHubWorkflowTemplateGroup): Promise<GitHubWorkflowTemplate[]> {
+    if (starterWorkflowTemplates) {
+        return starterWorkflowTemplates;
+    }
+
     const owner = 'actions';
     const repo = 'starter-workflows';
 
@@ -48,7 +75,7 @@ export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitH
         {
             owner,
             repo,
-            path: 'deployments/properties'
+            path: `${group.id}/properties`
         }) as GitHubDirectoryContent;
 
     function isFile(entry: GitHubDirectoryEntry): boolean {
@@ -61,7 +88,7 @@ export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitH
         return template !== undefined;
     }
 
-    const downloadedTemplates = await Promise.all(files.map(file => getStarterWorkflowTemplate(client, owner, repo, file)));
+    const downloadedTemplates = await Promise.all(files.map(file => getStarterWorkflowTemplate(client, owner, repo, group, file)));
 
     starterWorkflowTemplates = downloadedTemplates.filter(isValidTemplate);
 
@@ -70,7 +97,7 @@ export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitH
     return starterWorkflowTemplates;
 }
 
-async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: string, file: GitHubDirectoryEntry): Promise<GitHubWorkflowTemplate | undefined> {
+async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: string, group: GitHubWorkflowTemplateGroup, file: GitHubDirectoryEntry): Promise<GitHubWorkflowTemplate | undefined> {
     const propertiesContent = await getFileContent(client, owner, repo, file.path);
 
     if (!propertiesContent) {
@@ -93,6 +120,7 @@ async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: 
 
     return {
         content: templateContent,
+        group,
         id: path.join(templateDir, basename),
         properties,
         suggestedFileName: basename + '.yml'
