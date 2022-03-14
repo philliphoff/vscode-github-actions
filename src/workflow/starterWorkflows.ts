@@ -31,11 +31,12 @@ interface GitHubWorkflowTemplateGroup {
 }
 
 interface GitHubWorkflowTemplate {
-    readonly content: string;
     readonly group: GitHubWorkflowTemplateGroup;
     readonly id: string;
     readonly properties: GitHubWorkflowTemplateProperties;
     readonly suggestedFileName: string;
+
+    getContent(): Promise<string | undefined>;
 }
 
 let starterWorkflowTemplates: GitHubWorkflowTemplate[] | undefined;
@@ -111,19 +112,17 @@ async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: 
     const templateDir = path.dirname(path.dirname(file.path));
     const templatePath = path.join(templateDir, basename + '.yml');
 
-    // TODO: Wait until needed (i.e. store path in model).
-    const templateContent = await getFileContent(client, owner, repo, templatePath);
-
-    if (!templateContent) {
-        return undefined;
-    }
-
     return {
-        content: templateContent,
         group,
         id: path.join(templateDir, basename),
         properties,
-        suggestedFileName: basename + '.yml'
+        suggestedFileName: basename + '.yml',
+
+        getContent:
+            async () => {
+                // TODO: Cache content?
+                return await getFileContent(client, owner, repo, templatePath);
+            }
     };
 }
 

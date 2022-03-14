@@ -41,7 +41,13 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
                         label: template.properties.name,
                         
                         onCreate: async (context: WorkflowCreationContext) => {
-                            await context.createWorkflowFromContent(template.suggestedFileName, template.content);
+                            const content = await template.getContent();
+
+                            if (!content) {
+                                throw new Error(`Could not get content for template '${template.id}'.`);
+                            }
+
+                            await context.createWorkflowFromContent(template.suggestedFileName, content);
                         }
                     })        
                 });
