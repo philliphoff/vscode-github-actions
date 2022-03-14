@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
-import { createWorkflowFromTemplate, registerWorkflowTemplate } from "../../workflow/templates";
+import { createWorkflowFromTemplate, registerStarterWorkflowTemplate, registerWorkflowTemplate } from "../../workflow/templates";
 import { GitHubActionsApi, StarterWorkflowTemplateDefinition, WorkflowTemplateDefinition } from "./api";
 
 export class CurrentGitHubActionsApi implements GitHubActionsApi {
     registerStarterWorkflowTemplate(definition: StarterWorkflowTemplateDefinition): vscode.Disposable {
-        return this.registerStarterWorkflowTemplate(definition);
+        return registerStarterWorkflowTemplate(definition);
     }
 
     registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
