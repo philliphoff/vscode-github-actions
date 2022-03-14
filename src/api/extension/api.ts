@@ -6,7 +6,7 @@ export interface WorkflowResult<T> {
 }
 
 export interface WorkflowCreationContext {
-    callerContext?: never;
+    readonly callerContext?: never;
 
     createWorkflowFromContent(suggestedFileName: string, content: string): Promise<WorkflowResult<vscode.Uri>>;
 
@@ -21,18 +21,30 @@ export interface WorkflowCreationContext {
     setSecret(suggestedName: string, value: string): Promise<WorkflowResult<string>>;
 }
 
+export interface StarterWorkflowCreationContext extends WorkflowCreationContext {
+    readonly content: string;
+}
+
 export interface WorkflowTemplateDefinition {
     readonly description: string;
     readonly group: { id: string, label: string};
     readonly id: string;
     readonly label: string;
 
-    onCreate?: (context: WorkflowCreationContext) => Promise<void>;
+    onCreate(context: WorkflowCreationContext): Promise<void>;
+}
+
+export interface StarterWorkflowTemplateDefinition {
+    readonly id: string;
+
+    onCreate(context: StarterWorkflowCreationContext): Promise<void>;
 }
 
 export interface GitHubActionsApi {
-    registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable;
     createWorkflowFromTemplate(templateId: string, callerContext?: never): Promise<void>;
+
+    registerStarterWorkflowTemplate(definition: StarterWorkflowTemplateDefinition): vscode.Disposable;
+    registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable;
 }
 
 export interface GitHubActionsApiManager {

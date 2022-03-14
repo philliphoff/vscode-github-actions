@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { WorkflowCreationContext, WorkflowTemplateDefinition } from "../api/extension/api";
+import { StarterWorkflowTemplateDefinition, WorkflowCreationContext, WorkflowTemplateDefinition } from "../api/extension/api";
 import { getGitHubContext, getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
 import { setSecret } from '../secrets';
 import { getStarterWorkflowTemplates } from './starterWorkflows';
 
-const definitions: WorkflowTemplateDefinition[] = [];
+const starterDefinitions: { [key: string]: StarterWorkflowTemplateDefinition } = {};
+const definitions: { [key: string]: WorkflowTemplateDefinition } = {};
 
 let areStarterWorkflowsRegistered = false;
 
@@ -47,25 +48,49 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
                                 throw new Error(`Could not get content for template '${template.id}'.`);
                             }
 
-                            await context.createWorkflowFromContent(template.suggestedFileName, content);
+                            const definition = starterDefinitions[template.id];
+
+                            if (definition) {
+                                // Defer creation to registered template handler...
+                                await definition.onCreate({ ...context, content });
+                            } else {
+                                // Create simple workflow from content...
+                                await context.createWorkflowFromContent(template.suggestedFileName, content);
+                            }
+
                         }
-                    })        
+                    })
                 });
                 
                 areStarterWorkflowsRegistered = true;
         });
 }
 
-export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
-    definitions.push(definition);
+export function registerStarterWorkflowTemplate(definition: StarterWorkflowTemplateDefinition): vscode.Disposable {
+    if (starterDefinitions[definition.id]) {
+        throw new Error(`Starter workflow template with ID '${definition.id}' is already registered.`);
+    }
+    
+    starterDefinitions[definition.id] = definition;
 
     return {
         dispose: () => {
-            const index = definitions.indexOf(definition);
+            delete starterDefinitions[definition.id];
+        }
+    };
+}
 
-            if (index >= 0) {
-                definitions.splice(index, 1);
-            }
+export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
+    // TODO: Prevent extensions from registering templates with IDs that match those of starter templates (which are registered on-demand).
+    if (definitions[definition.id]) {
+        throw new Error(`Workflow template with ID '${definition.id}' is already registered.`);
+    }
+
+    definitions[definition.id] = definition;
+
+    return {
+        dispose: () => {
+            delete definitions[definition.id];
         }
     };
 }
@@ -88,7 +113,7 @@ async function selectWorkspace(): Promise<vscode.Uri | undefined> {
 
 async function getWorkflowTemplate(templateId: string | undefined): Promise<WorkflowTemplateDefinition | undefined> {
     if (templateId) {
-        const template = definitions.find(definition => definition.id === templateId);
+        const template = definitions[templateId];
 
         if (!template) {
             throw new Error(`No template '${templateId}' is registered.`);
@@ -97,7 +122,7 @@ async function getWorkflowTemplate(templateId: string | undefined): Promise<Work
         return template;
     } else {
         // TODO: Have well known groups (to protect against changes to ID or label over time)?
-        const groupedTemplates = definitions.reduce<{ [key: string]: { id: string, label: string, templates: WorkflowTemplateDefinition[] } }>(
+        const groupedTemplates = Object.values(definitions).reduce<{ [key: string]: { id: string, label: string, templates: WorkflowTemplateDefinition[] } }>(
             (previous, current) => {
                 const group = previous[current.group.id] || { ...current.group, templates: [] };
 
