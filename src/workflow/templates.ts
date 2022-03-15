@@ -3,6 +3,7 @@ import { StarterWorkflowTemplateDefinition, WorkflowCreationContext, WorkflowTem
 import { getGitHubContext, getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
 import { setSecret } from '../secrets';
 import { getStarterWorkflowTemplates } from './starterWorkflows';
+import { getWorkflowContributors } from './workflowContributors';
 
 const starterDefinitions: { [key: string]: StarterWorkflowTemplateDefinition } = {};
 const definitions: { [key: string]: WorkflowTemplateDefinition } = {};
@@ -63,6 +64,30 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
                 });
                 
                 areStarterWorkflowsRegistered = true;
+        });
+
+    // TODO: Defer registration until user has selected a workflow.
+    //       This requires a package.json mechanism for registering workflow template details.
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Registering extension workflows...'
+        },
+        async () => {
+            const workflowContributors = getWorkflowContributors();
+
+            function isValidExtension(extension: vscode.Extension<unknown> | undefined): extension is vscode.Extension<unknown> {
+                return extension !== undefined;
+            }
+
+            const inactiveContributors =
+                Object
+                    .keys(workflowContributors)
+                    .map (id => vscode.extensions.getExtension(id))
+                    .filter(isValidExtension)
+                    .filter(extension => !extension.isActive);
+
+            await Promise.all(inactiveContributors.map(extension => extension.activate()));
         });
 }
 
