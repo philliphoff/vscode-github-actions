@@ -1,17 +1,13 @@
 import * as vscode from "vscode";
-import { createWorkflowFromTemplate, registerStarterWorkflowTemplate, registerWorkflowTemplate } from "../../workflow/templates";
-import { GitHubActionsApi, StarterWorkflowTemplateDefinition, WorkflowTemplateDefinition } from "./api";
+import { createWorkflow, registerWorkflowProvider } from "../../workflow/templates";
+import { GitHubActionsApi, GitHubWorkflowProvider } from "./api";
 
 export class CurrentGitHubActionsApi implements GitHubActionsApi {
-    registerStarterWorkflowTemplate(definition: StarterWorkflowTemplateDefinition): vscode.Disposable {
-        return registerStarterWorkflowTemplate(definition);
+    createWorkflow(type: string, callerContext?: never): Promise<void> {
+        return createWorkflow(undefined, type, callerContext);
     }
 
-    registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
-        return registerWorkflowTemplate(definition);
-    }
-
-    createWorkflowFromTemplate(templateId: string, callerContext?: never): Promise<void> {
-        return createWorkflowFromTemplate(undefined, templateId, callerContext);
+    registerWorkflowProvider(type: string, provider: GitHubWorkflowProvider): vscode.Disposable {
+        return registerWorkflowProvider(type, provider);
     }
 }

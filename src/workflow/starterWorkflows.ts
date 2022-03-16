@@ -17,7 +17,7 @@ interface GitHubDirectoryContent {
     readonly data: GitHubDirectoryEntry[];
 }
 
-interface GitHubWorkflowTemplateProperties {
+export interface GitHubWorkflowTemplateProperties {
     readonly name: string;
     readonly description: string;
     readonly creator: string;
@@ -25,13 +25,8 @@ interface GitHubWorkflowTemplateProperties {
     readonly categories: string[];
 }
 
-interface GitHubWorkflowTemplateGroup {
-    readonly id: string;
-    readonly label: string;
-}
-
-interface GitHubWorkflowTemplate {
-    readonly group: GitHubWorkflowTemplateGroup;
+export interface GitHubWorkflowTemplate {
+    readonly group: string;
     readonly id: string;
     readonly properties: GitHubWorkflowTemplateProperties;
     readonly suggestedFileName: string;
@@ -41,12 +36,7 @@ interface GitHubWorkflowTemplate {
 
 let starterWorkflowTemplates: GitHubWorkflowTemplate[] | undefined;
 
-const groups = [
-    { id: 'ci', label: 'Continuous Integration' },
-    { id: 'deployments', label: 'Deployment' },
-    { id: 'automation', label: 'Automation' },
-    { id: 'code-scanning', label: 'Code Scanning' }
-];
+const groups = [ 'ci', 'deployments', 'automation', 'code-scanning'];
 
 export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitHubWorkflowTemplate[]> {
     if (starterWorkflowTemplates) {
@@ -64,7 +54,7 @@ export async function getStarterWorkflowTemplates(client: Octokit): Promise<GitH
     return starterWorkflowTemplates;
 }
 
-async function getStarterWorkflowTemplatesForGroup(client: Octokit, group: GitHubWorkflowTemplateGroup): Promise<GitHubWorkflowTemplate[]> {
+async function getStarterWorkflowTemplatesForGroup(client: Octokit, group: string): Promise<GitHubWorkflowTemplate[]> {
     if (starterWorkflowTemplates) {
         return starterWorkflowTemplates;
     }
@@ -76,7 +66,7 @@ async function getStarterWorkflowTemplatesForGroup(client: Octokit, group: GitHu
         {
             owner,
             repo,
-            path: `${group.id}/properties`
+            path: `${group}/properties`
         }) as GitHubDirectoryContent;
 
     function isFile(entry: GitHubDirectoryEntry): boolean {
@@ -98,7 +88,7 @@ async function getStarterWorkflowTemplatesForGroup(client: Octokit, group: GitHu
     return starterWorkflowTemplates;
 }
 
-async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: string, group: GitHubWorkflowTemplateGroup, file: GitHubDirectoryEntry): Promise<GitHubWorkflowTemplate | undefined> {
+async function getStarterWorkflowTemplate(client: Octokit, owner: string, repo: string, group: string, file: GitHubDirectoryEntry): Promise<GitHubWorkflowTemplate | undefined> {
     const propertiesContent = await getFileContent(client, owner, repo, file.path);
 
     if (!propertiesContent) {

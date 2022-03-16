@@ -1,31 +1,48 @@
 import * as vscode from 'vscode';
 
-export interface WorkflowContribution {
-    readonly id: string;
+interface StarterWorkflowContribution {
+    readonly workflow: string;
 }
 
-export interface ExtensionPackage {
+export interface CustomWorkflowContribution {
+    readonly workflow: string;
+    readonly title: string;
+    readonly description: string;
+    readonly group: string;
+}
+
+type WorkflowContribution = StarterWorkflowContribution | CustomWorkflowContribution;
+
+interface ExtensionPackage {
     readonly contributes?: {
-        readonly 'x-workflows'?: WorkflowContribution[];
+        readonly 'x-github-workflows'?: WorkflowContribution[];
     };
 }
 
-export function getWorkflowContributors(): { [key: string]: WorkflowContribution[] } {
-    // TODO: Cache and watch for extension changes.
-    const workflowContributors = vscode.extensions.all
-        .reduce<{ [key: string]: WorkflowContribution[] }>(
-            (previous, extension) => {
-                const extensionPackage: ExtensionPackage = extension.packageJSON;
+function isCustomWorkflow(contribution: WorkflowContribution): contribution is CustomWorkflowContribution {
+    return (contribution as CustomWorkflowContribution).title !== undefined;
+}
 
-                const workflows = extensionPackage?.contributes?.['x-workflows'];
+export async function activateExtensionForWorkflow(type: string): Promise<string | undefined> {
+    const extensionAndContributions =
+        vscode.extensions.all
+            .map(extension => ({ extension, contributions: (extension.packageJSON as ExtensionPackage)?.contributes?.['x-github-workflows'] ?? [] }))
+            .find(extensionAndContributions => extensionAndContributions.contributions.find(contribution => contribution.workflow === type) !== undefined);
 
-                if (workflows) {
-                    previous[extension.id] = workflows;
-                }
+    if (extensionAndContributions) {
+        if (!extensionAndContributions.extension.isActive) {
+            await extensionAndContributions.extension.activate();
+        }
 
-                return previous;
-        },
-        {});
+        return extensionAndContributions.extension.id;
+    } else {
+        return undefined;
+    }
+}
 
-    return workflowContributors;
+export function getCustomWorkflows(): CustomWorkflowContribution[] {
+    return vscode.extensions.all
+        .map(extension => (extension.packageJSON as ExtensionPackage)?.contributes?.['x-github-workflows'] ?? [])
+        .flatMap(workflow => workflow)
+        .filter(isCustomWorkflow);
 }

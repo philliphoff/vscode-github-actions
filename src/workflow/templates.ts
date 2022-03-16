@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
-import { StarterWorkflowTemplateDefinition, WorkflowCreationContext, WorkflowTemplateDefinition } from "../api/extension/api";
+import { GitHubWorkflowProvider, WorkflowCreationContext } from "../api/extension/api";
 import { getGitHubContext, getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
 import { setSecret } from '../secrets';
-import { getStarterWorkflowTemplates } from './starterWorkflows';
-import { getWorkflowContributors } from './workflowContributors';
+import { getStarterWorkflowTemplates, GitHubWorkflowTemplate } from './starterWorkflows';
+import { activateExtensionForWorkflow, getCustomWorkflows } from './workflowContributors';
 
-const starterDefinitions: { [key: string]: StarterWorkflowTemplateDefinition } = {};
-const definitions: { [key: string]: WorkflowTemplateDefinition } = {};
+let starterDefinitions: GitHubWorkflowTemplate[];
+
+const workflowProviders: { [key: string]: GitHubWorkflowProvider } = {};
 
 let areStarterWorkflowsRegistered = false;
 
@@ -32,90 +33,23 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
             //       What if the repo is not linked to GitHub yet?
             const client = gitHubContext.repos[0].client;
             
-            const starterWorkflowTemplates = await getStarterWorkflowTemplates(client);
-            
-            starterWorkflowTemplates.forEach(
-                template => {
-                    registerWorkflowTemplate({
-                        description: template.properties.description,
-                        group: template.group,
-                        id: template.id,
-                        label: template.properties.name,
-                        
-                        onCreate: async (context: WorkflowCreationContext) => {
-                            const content = await template.getContent();
+            starterDefinitions = await getStarterWorkflowTemplates(client);
 
-                            if (!content) {
-                                throw new Error(`Could not get content for template '${template.id}'.`);
-                            }
-
-                            const definition = starterDefinitions[template.id];
-
-                            if (definition) {
-                                // Defer creation to registered template handler...
-                                await definition.onCreate({ ...context, content });
-                            } else {
-                                // Create simple workflow from content...
-                                await context.createWorkflowFromContent(template.suggestedFileName, content);
-                            }
-
-                        }
-                    })
-                });
-                
-                areStarterWorkflowsRegistered = true;
-        });
-
-    // TODO: Defer registration until user has selected a workflow.
-    //       This requires a package.json mechanism for registering workflow template details.
-    await vscode.window.withProgress(
-        {
-            location: vscode.ProgressLocation.Notification,
-            title: 'Registering extension workflows...'
-        },
-        async () => {
-            const workflowContributors = getWorkflowContributors();
-
-            function isValidExtension(extension: vscode.Extension<unknown> | undefined): extension is vscode.Extension<unknown> {
-                return extension !== undefined;
-            }
-
-            const inactiveContributors =
-                Object
-                    .keys(workflowContributors)
-                    .map (id => vscode.extensions.getExtension(id))
-                    .filter(isValidExtension)
-                    .filter(extension => !extension.isActive);
-
-            await Promise.all(inactiveContributors.map(extension => extension.activate()));
+            areStarterWorkflowsRegistered = true;
         });
 }
 
-export function registerStarterWorkflowTemplate(definition: StarterWorkflowTemplateDefinition): vscode.Disposable {
-    if (starterDefinitions[definition.id]) {
-        throw new Error(`Starter workflow template with ID '${definition.id}' is already registered.`);
-    }
-    
-    starterDefinitions[definition.id] = definition;
-
-    return {
-        dispose: () => {
-            delete starterDefinitions[definition.id];
-        }
-    };
-}
-
-export function registerWorkflowTemplate(definition: WorkflowTemplateDefinition): vscode.Disposable {
+export function registerWorkflowProvider(type: string, provider: GitHubWorkflowProvider): vscode.Disposable {
     // TODO: Prevent extensions from registering templates with IDs that match those of starter templates (which are registered on-demand).
-    if (definitions[definition.id]) {
-        throw new Error(`Workflow template with ID '${definition.id}' is already registered.`);
+    if (workflowProviders[type]) {
+        throw new Error(`A workflow provider for type '${type}' is already registered.`);
     }
 
-    definitions[definition.id] = definition;
+    workflowProviders[type] = provider;
 
     return {
         dispose: () => {
-            delete definitions[definition.id];
+            delete workflowProviders[type];
         }
     };
 }
@@ -136,30 +70,76 @@ async function selectWorkspace(): Promise<vscode.Uri | undefined> {
     }
 }
 
-async function getWorkflowTemplate(templateId: string | undefined): Promise<WorkflowTemplateDefinition | undefined> {
-    if (templateId) {
-        const template = definitions[templateId];
+async function getWorkflowProvider(type: string): Promise<GitHubWorkflowProvider | undefined> {
+    await activateExtensionForWorkflow(type);
 
-        if (!template) {
-            throw new Error(`No template '${templateId}' is registered.`);
+    return workflowProviders[type];
+}
+
+function createStarterWorkflowProvider(template: GitHubWorkflowTemplate): GitHubWorkflowProvider {
+    return {
+        createWorkflow: async (context: WorkflowCreationContext): Promise<void> => {
+            const content = context.content ?? await template.getContent();
+
+            if (!content) {
+                throw new Error(`Could not get content for template '${template.id}'.`);
+            }
+
+            const workflowProvider = await getWorkflowProvider(template.id);
+
+            if (workflowProvider) {
+                workflowProvider.createWorkflow({ ...context, content });
+            } else {
+                context.createWorkflowFromContent(template.suggestedFileName, content);
+            }
+        }
+    };
+}
+
+const groupLabels: { [key: string]: string } = {
+    'ci': 'Continuous Integration',
+    'deployments': 'Deployment',
+    'automation': 'Automation',
+    'code-scanning': 'Code Scanning'
+};
+
+type WorkflowDefinition = { title: string, description: string, group: string, providerFactory: () => Promise<GitHubWorkflowProvider | undefined> };
+
+async function selectWorkflowProvider(type: string | undefined): Promise<GitHubWorkflowProvider | undefined> {
+    if (type) {
+        const starterDefinition = starterDefinitions.find(definition => definition.id === type);
+
+        if (starterDefinition) {
+            return createStarterWorkflowProvider(starterDefinition);
         }
 
-        return template;
+        const workflowProvider = getWorkflowProvider(type);
+
+        if (workflowProvider) {
+            return workflowProvider;
+        }
+
+        throw new Error(`No template '${type}' is registered.`);
     } else {
+        const starterWorkflowDefinitions: WorkflowDefinition[] = starterDefinitions.map(definition => ({ title: definition.properties.name, description: definition.properties.description, group: definition.group, providerFactory: () => Promise.resolve(createStarterWorkflowProvider(definition)) }));        
+        const extensionWorkflowDefinitions: WorkflowDefinition[] = getCustomWorkflows().map(contribution => ({ title: contribution.title, description: contribution.description, group: contribution.group, providerFactory: () => getWorkflowProvider(contribution.workflow) }));
+        const allWorkflowDefinitions = starterWorkflowDefinitions.concat(extensionWorkflowDefinitions);
+
         // TODO: Have well known groups (to protect against changes to ID or label over time)?
-        const groupedTemplates = Object.values(definitions).reduce<{ [key: string]: { id: string, label: string, templates: WorkflowTemplateDefinition[] } }>(
+        const groupedTemplates = allWorkflowDefinitions.reduce<{ [key: string]: { label: string, templates: WorkflowDefinition[] } }>(
             (previous, current) => {
-                const group = previous[current.group.id] || { ...current.group, templates: [] };
+                const label = groupLabels[current.group] || current.group;
+                const group = previous[label] || { label, templates: [] };
 
                 group.templates.push(current);
 
-                previous[current.group.id] = group;
+                previous[label] = group;
 
                 return previous;
             },
             {});
 
-        const items: (vscode.QuickPickItem & { template?: WorkflowTemplateDefinition })[] =
+        const items: (vscode.QuickPickItem & { template?: WorkflowDefinition })[] =
             Object
                 .values(groupedTemplates)
                 .sort((a, b) => a.label.localeCompare(b.label))
@@ -169,28 +149,28 @@ async function getWorkflowTemplate(templateId: string | undefined): Promise<Work
                     return [separator].concat(
                         group
                             .templates
-                            .sort((a, b) => a.label.localeCompare(b.label))
-                            .map(template => ({ label: template.label, detail: template.description, template })));
+                            .sort((a, b) => a.title.localeCompare(b.title))
+                            .map(template => ({ label: template.title, detail: template.description, template })));
                 })
                 .flatMap(groupItems => groupItems);
 
        
         const selectedItem = await vscode.window.showQuickPick(items);
-        
-        return selectedItem?.template;
+
+        return await selectedItem?.template?.providerFactory();
     }
 }
 
-export async function createWorkflowFromTemplate(context?: GitHubRepoContext, templateId?: string, callerContext?: never): Promise<void> {
+export async function createWorkflow(context?: GitHubRepoContext, type?: string, callerContext?: never): Promise<void> {
     await ensureStarterWorkflowsRegistered();
 
-    let gitHubRepoContext = context;
+    const provider = await selectWorkflowProvider(type);
 
-    const template = await getWorkflowTemplate(templateId);
-
-    if (!template) {
-      return;
+    if (!provider) {
+      throw new Error(`No workflow provider for '${type}' was registered.`);
     }
+
+    let gitHubRepoContext = context;
 
     const workspaceUri = gitHubRepoContext?.workspaceUri ?? await selectWorkspace();
 
@@ -202,39 +182,37 @@ export async function createWorkflowFromTemplate(context?: GitHubRepoContext, te
       gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceUri);
     }
 
-    if (template.onCreate) {
-        await template.onCreate({
-            callerContext,
-            createWorkflowFromContent: async (suggestedFileName, content) => {
-                const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
-                const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, suggestedFileName);
-            
-                // TODO: Account for name collisions.
-            
-                await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
-            
-                await vscode.workspace.fs.writeFile(workflowUri, Buffer.from(content, 'utf8'));
-            
-                return {
-                    succeeded: true,
-                    result: workflowUri
-                };
-            },
-            setSecret: async (suggestedName, value) => {
-                if (!gitHubRepoContext) {
-                    // TODO: Return failure?
-                    throw new Error("No GitHub context available");
-                }
-
-                await setSecret(gitHubRepoContext, suggestedName, value);
-
-                // TODO: Account for name collisions.
-
-                return {
-                    succeeded: true,
-                    result: suggestedName
-                };
+    await provider.createWorkflow({
+        callerContext,
+        createWorkflowFromContent: async (suggestedFileName, content) => {
+            const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
+            const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, suggestedFileName);
+        
+            // TODO: Account for name collisions.
+        
+            await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
+        
+            await vscode.workspace.fs.writeFile(workflowUri, Buffer.from(content, 'utf8'));
+        
+            return {
+                succeeded: true,
+                result: workflowUri
+            };
+        },
+        setSecret: async (suggestedName, value) => {
+            if (!gitHubRepoContext) {
+                // TODO: Return failure?
+                throw new Error("No GitHub context available");
             }
-        });
-    }
+
+            await setSecret(gitHubRepoContext, suggestedName, value);
+
+            // TODO: Account for name collisions.
+
+            return {
+                succeeded: true,
+                result: suggestedName
+            };
+        }
+    });
 }

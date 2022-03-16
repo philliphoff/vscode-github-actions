@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 
-import { getGitHubContextForWorkspaceUri, GitHubRepoContext } from "../git/repository";
+import { GitHubRepoContext } from "../git/repository";
 import { setSecret } from "../secrets";
-import { createWorkflowFromTemplate } from "../workflow/templates";
+import { createWorkflow } from "../workflow/templates";
 
 enum WorkflowCategory {
     Automation,
@@ -73,6 +73,7 @@ export function registerCreateWorkflow(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "github-actions.workflow.create",
       async (args?: CreateWorkflowCommandArgs) => {
-        await createWorkflowFromTemplate(args?.gitHubRepoContext);
+        await createWorkflow(args?.gitHubRepoContext);
       }));
 }
+
