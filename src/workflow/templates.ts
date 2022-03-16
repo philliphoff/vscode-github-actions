@@ -157,7 +157,18 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
        
         const selectedItem = await vscode.window.showQuickPick(items);
 
-        return await selectedItem?.template?.providerFactory();
+        if (!selectedItem) {
+            return undefined;
+        }
+
+        const workflowProvider = await selectedItem.template?.providerFactory();
+
+        if (!workflowProvider) {
+            // TODO: Pipe through workflow ID for error message purposes.
+            throw new Error(`No provider for workflow '${selectedItem.template?.title}' is registered.`);
+        }
+
+        return workflowProvider;
     }
 }
 
@@ -167,7 +178,7 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
     const provider = await selectWorkflowProvider(type);
 
     if (!provider) {
-      throw new Error(`No workflow provider for '${type}' was registered.`);
+      return;
     }
 
     let gitHubRepoContext = context;
