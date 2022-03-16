@@ -3,7 +3,7 @@ import { createWorkflow, registerWorkflowProvider } from "../../workflow/templat
 import { GitHubActionsApi, GitHubWorkflowProvider } from "./api";
 
 export class CurrentGitHubActionsApi implements GitHubActionsApi {
-    createWorkflow(type: string, callerContext?: never): Promise<void> {
+    createWorkflow(type: string, callerContext?: never): Promise<vscode.Uri[]> {
         return createWorkflow(undefined, type, callerContext);
     }
 

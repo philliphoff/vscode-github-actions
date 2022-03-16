@@ -76,7 +76,7 @@ async function getWorkflowProvider(type: string): Promise<GitHubWorkflowProvider
     return workflowProviders[type];
 }
 
-function createStarterWorkflowProvider(template: GitHubWorkflowTemplate): GitHubWorkflowProvider {
+function getStarterWorkflowProvider(template: GitHubWorkflowTemplate): GitHubWorkflowProvider {
     return {
         createWorkflow: async (context: WorkflowCreationContext): Promise<void> => {
             const content = context.content ?? await template.getContent();
@@ -85,12 +85,14 @@ function createStarterWorkflowProvider(template: GitHubWorkflowTemplate): GitHub
                 throw new Error(`Could not get content for template '${template.id}'.`);
             }
 
+            const suggestedFileName = context.suggestedFileName ?? template.suggestedFileName;
+
             const workflowProvider = await getWorkflowProvider(template.id);
 
             if (workflowProvider) {
-                workflowProvider.createWorkflow({ ...context, content });
+                await workflowProvider.createWorkflow({ ...context, content, suggestedFileName });
             } else {
-                context.createWorkflowFile(template.suggestedFileName, content);
+                await context.createWorkflowFile(suggestedFileName, content);
             }
         }
     };
@@ -110,7 +112,7 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
         const starterDefinition = starterDefinitions.find(definition => definition.id === type);
 
         if (starterDefinition) {
-            return createStarterWorkflowProvider(starterDefinition);
+            return getStarterWorkflowProvider(starterDefinition);
         }
 
         const workflowProvider = getWorkflowProvider(type);
@@ -121,7 +123,7 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
 
         throw new Error(`No template '${type}' is registered.`);
     } else {
-        const starterWorkflowDefinitions: WorkflowDefinition[] = starterDefinitions.map(definition => ({ title: definition.properties.name, description: definition.properties.description, group: definition.group, providerFactory: () => Promise.resolve(createStarterWorkflowProvider(definition)) }));        
+        const starterWorkflowDefinitions: WorkflowDefinition[] = starterDefinitions.map(definition => ({ title: definition.properties.name, description: definition.properties.description, group: definition.group, providerFactory: () => Promise.resolve(getStarterWorkflowProvider(definition)) }));        
         const extensionWorkflowDefinitions: WorkflowDefinition[] = getCustomWorkflows().map(contribution => ({ title: contribution.title, description: contribution.description, group: contribution.group, providerFactory: () => getWorkflowProvider(contribution.workflow) }));
         const allWorkflowDefinitions = starterWorkflowDefinitions.concat(extensionWorkflowDefinitions);
 
@@ -172,13 +174,13 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
     }
 }
 
-export async function createWorkflow(context?: GitHubRepoContext, type?: string, callerContext?: never): Promise<void> {
+export async function createWorkflow(context?: GitHubRepoContext, type?: string, callerContext?: never): Promise<vscode.Uri[]> {
     await ensureStarterWorkflowsRegistered();
 
     const provider = await selectWorkflowProvider(type);
 
     if (!provider) {
-      return;
+      return [];
     }
 
     let gitHubRepoContext = context;
@@ -186,29 +188,30 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
     const workspaceUri = gitHubRepoContext?.workspaceUri ?? await selectWorkspace();
 
     if (!workspaceUri) {
-      return;
+      return [];
     }
 
     if (!gitHubRepoContext) {
       gitHubRepoContext = await getGitHubContextForWorkspaceUri(workspaceUri);
     }
 
+    const workflowFiles: vscode.Uri[] = [];
+
     await provider.createWorkflow({
         callerContext,
         createWorkflowFile: async (suggestedFileName, content) => {
             const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
             const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, suggestedFileName);
-        
+
             // TODO: Account for name collisions.
-        
+
             await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
-        
+
             await vscode.workspace.fs.writeFile(workflowUri, Buffer.from(content, 'utf8'));
-        
-            return {
-                succeeded: true,
-                result: workflowUri
-            };
+
+            workflowFiles.push(workflowUri);
+
+            return workflowUri;
         },
         setSecret: async (suggestedName, value) => {
             if (!gitHubRepoContext) {
@@ -220,10 +223,9 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
 
             // TODO: Account for name collisions.
 
-            return {
-                succeeded: true,
-                result: suggestedName
-            };
+            return suggestedName;
         }
     });
+
+    return workflowFiles;
 }

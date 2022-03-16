@@ -1,10 +1,5 @@
 import * as vscode from "vscode";
 
-export interface WorkflowResult<T> {
-    result?: T;
-    succeeded: boolean;
-}
-
 export interface WorkflowCreationContext {
     /**
      * Optional and opaque context provided by the caller when creating the workflow.
@@ -17,6 +12,11 @@ export interface WorkflowCreationContext {
     readonly content?: string;
 
     /**
+     * Initial name for a new workflow file. Populated, for example, when creating a starter workflow.
+     */
+    readonly suggestedFileName?: string;
+
+    /**
      * Creates a new workflow file.
      *
      * @param suggestedFileName The suggested file name for a new workflow.
@@ -24,7 +24,7 @@ export interface WorkflowCreationContext {
      *
      * @returns The actual URI of the created workflow.
      */
-    createWorkflowFile(suggestedFileName: string, content: string): Promise<WorkflowResult<vscode.Uri>>;
+    createWorkflowFile(suggestedFileName: string, content: string): Promise<vscode.Uri | undefined>;
 
     /**
      * Creates or updates an actions secret in the GitHub repository.
@@ -34,7 +34,7 @@ export interface WorkflowCreationContext {
      *
      * @returns The actual name of the created/updated secret.
      */
-    setSecret(suggestedName: string, value: string): Promise<WorkflowResult<string>>;
+    setSecret(suggestedName: string, value: string): Promise<string | undefined>;
 }
 
 export interface GitHubWorkflowProvider {
@@ -42,7 +42,7 @@ export interface GitHubWorkflowProvider {
 }
 
 export interface GitHubActionsApi {
-    createWorkflow(type: string, callerContext?: never): Promise<void>;
+    createWorkflow(type: string, callerContext?: never): Promise<vscode.Uri[]>;
 
     registerWorkflowProvider(type: string, provider: GitHubWorkflowProvider): vscode.Disposable;
 }
