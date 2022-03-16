@@ -19,7 +19,7 @@ async function ensureStarterWorkflowsRegistered(): Promise<void> {
     await vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Getting GitHub starter workflows...'
+            title: 'Getting GitHub workflows...'
         },
         async () => {
             // TODO: Be passed context as argument.
@@ -90,7 +90,7 @@ function createStarterWorkflowProvider(template: GitHubWorkflowTemplate): GitHub
             if (workflowProvider) {
                 workflowProvider.createWorkflow({ ...context, content });
             } else {
-                context.createWorkflowFromContent(template.suggestedFileName, content);
+                context.createWorkflowFile(template.suggestedFileName, content);
             }
         }
     };
@@ -184,7 +184,7 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
 
     await provider.createWorkflow({
         callerContext,
-        createWorkflowFromContent: async (suggestedFileName, content) => {
+        createWorkflowFile: async (suggestedFileName, content) => {
             const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
             const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, suggestedFileName);
         
