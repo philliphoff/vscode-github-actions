@@ -236,8 +236,6 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
                 return undefined;
             }
 
-            // TODO: Account for name collisions.
-
             await vscode.workspace.fs.createDirectory(gitHubWorkflowsUri);
 
             await vscode.workspace.fs.writeFile(workflowUri, Buffer.from(content, 'utf8'));
