@@ -174,6 +174,33 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
     }
 }
 
+async function selectWorkflowUri(workflowsUri: vscode.Uri, suggestedFileName: string): Promise<vscode.Uri | undefined> {
+    const input = await vscode.window.showInputBox(
+        {
+            prompt: "Enter a file name for the workflow",
+            value: suggestedFileName,
+            validateInput: async (fileName: string) => {
+                if (fileName.length === 0) {
+                    return "File name cannot be empty.";
+                }
+
+                try {
+                    if (await vscode.workspace.fs.stat(vscode.Uri.joinPath(workflowsUri, fileName ))) {
+                        return "File already exists.";
+                    }
+                } catch {
+                    // Assume the file doesn't exist.
+                }
+            }
+        });
+
+    if (!input) {
+        return undefined;
+    }
+
+    return vscode.Uri.joinPath(workflowsUri, input);
+}
+
 export async function createWorkflow(context?: GitHubRepoContext, type?: string, callerContext?: never): Promise<vscode.Uri[]> {
     await ensureStarterWorkflowsRegistered();
 
@@ -199,13 +226,19 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
 
     await provider.createWorkflow({
         callerContext,
+        workspaceUri,
         createWorkflowFile: async (suggestedFileName, content) => {
-            const githubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
-            const workflowUri = vscode.Uri.joinPath(githubWorkflowsUri, suggestedFileName);
+            const gitHubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");
+
+            const workflowUri = await selectWorkflowUri(gitHubWorkflowsUri, suggestedFileName);
+
+            if (!workflowUri) {
+                return undefined;
+            }
 
             // TODO: Account for name collisions.
 
-            await vscode.workspace.fs.createDirectory(githubWorkflowsUri);
+            await vscode.workspace.fs.createDirectory(gitHubWorkflowsUri);
 
             await vscode.workspace.fs.writeFile(workflowUri, Buffer.from(content, 'utf8'));
 
