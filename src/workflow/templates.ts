@@ -105,26 +105,26 @@ const groupLabels: { [key: string]: string } = {
     'code-scanning': 'Code Scanning'
 };
 
-type WorkflowDefinition = { title: string, description: string, group: string, providerFactory: () => Promise<GitHubWorkflowProvider | undefined> };
+type WorkflowDefinition = { title: string, description: string, group: string, type: string, providerFactory: () => Promise<GitHubWorkflowProvider | undefined> };
 
-async function selectWorkflowProvider(type: string | undefined): Promise<GitHubWorkflowProvider | undefined> {
+async function selectWorkflowProvider(type: string | undefined): Promise<{ type: string, provider: GitHubWorkflowProvider } | undefined> {
     if (type) {
         const starterDefinition = starterDefinitions.find(definition => definition.id === type);
 
         if (starterDefinition) {
-            return getStarterWorkflowProvider(starterDefinition);
+            return { type, provider: getStarterWorkflowProvider(starterDefinition) };
         }
 
-        const workflowProvider = getWorkflowProvider(type);
+        const provider = await getWorkflowProvider(type);
 
-        if (workflowProvider) {
-            return workflowProvider;
+        if (provider) {
+            return { type, provider };
         }
 
         throw new Error(`No template '${type}' is registered.`);
     } else {
-        const starterWorkflowDefinitions: WorkflowDefinition[] = starterDefinitions.map(definition => ({ title: definition.properties.name, description: definition.properties.description, group: definition.group, providerFactory: () => Promise.resolve(getStarterWorkflowProvider(definition)) }));        
-        const extensionWorkflowDefinitions: WorkflowDefinition[] = getCustomWorkflows().map(contribution => ({ title: contribution.title, description: contribution.description, group: contribution.group, providerFactory: () => getWorkflowProvider(contribution.workflow) }));
+        const starterWorkflowDefinitions: WorkflowDefinition[] = starterDefinitions.map(definition => ({ title: definition.properties.name, description: definition.properties.description, group: definition.group, type: definition.id, providerFactory: () => Promise.resolve(getStarterWorkflowProvider(definition)) }));        
+        const extensionWorkflowDefinitions: WorkflowDefinition[] = getCustomWorkflows().map(contribution => ({ title: contribution.title, description: contribution.description, group: contribution.group, type: contribution.workflow, providerFactory: () => getWorkflowProvider(contribution.workflow) }));
         const allWorkflowDefinitions = starterWorkflowDefinitions.concat(extensionWorkflowDefinitions);
 
         // TODO: Have well known groups (to protect against changes to ID or label over time)?
@@ -159,18 +159,19 @@ async function selectWorkflowProvider(type: string | undefined): Promise<GitHubW
        
         const selectedItem = await vscode.window.showQuickPick(items);
 
-        if (!selectedItem) {
+        if (!selectedItem?.template) {
             return undefined;
         }
 
-        const workflowProvider = await selectedItem.template?.providerFactory();
+        const type = selectedItem.template.type;
+        const provider = await selectedItem.template.providerFactory();
 
-        if (!workflowProvider) {
+        if (!provider) {
             // TODO: Pipe through workflow ID for error message purposes.
             throw new Error(`No provider for workflow '${selectedItem.template?.title}' is registered.`);
         }
 
-        return workflowProvider;
+        return { type, provider };
     }
 }
 
@@ -204,11 +205,13 @@ async function selectWorkflowUri(workflowsUri: vscode.Uri, suggestedFileName: st
 export async function createWorkflow(context?: GitHubRepoContext, type?: string, callerContext?: never): Promise<vscode.Uri[]> {
     await ensureStarterWorkflowsRegistered();
 
-    const provider = await selectWorkflowProvider(type);
+    const selection = await selectWorkflowProvider(type);
 
-    if (!provider) {
+    if (!selection) {
       return [];
     }
+
+    const { type: selectedType, provider } = selection;
 
     let gitHubRepoContext = context;
 
@@ -226,6 +229,7 @@ export async function createWorkflow(context?: GitHubRepoContext, type?: string,
 
     await provider.createWorkflow({
         callerContext,
+        type: selectedType,
         workspaceUri,
         createWorkflowFile: async (suggestedFileName, content) => {
             const gitHubWorkflowsUri = vscode.Uri.joinPath(workspaceUri, ".github", "workflows");

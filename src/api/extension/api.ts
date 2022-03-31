@@ -17,6 +17,11 @@ export interface WorkflowCreationContext {
     readonly suggestedFileName?: string;
 
     /**
+     * The type of workflow being created. This can be useful when the same handler is used for multiple workflow types.
+     */
+    readonly type: string;
+
+    /**
      * The URI for the workspace in which the workflow will be created.
      */
     readonly workspaceUri: vscode.Uri;
