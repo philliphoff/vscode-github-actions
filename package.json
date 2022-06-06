@@ -8,7 +8,7 @@
     "url": "https://github.com/cschleiden/vscode-github-actions"
   },
   "description": "GitHub Actions workflows and runs for github.com hosted repositories in VS Code",
-  "version": "0.23.0",
+  "version": "0.24.1",
   "engines": {
     "vscode": "^1.65.0"
   },
@@ -55,6 +55,12 @@
           "description": "Whether org features should be enabled. Requires the `admin:org` scope",
           "default": false,
           "scope": "window"
+        },
+        "github-actions.remote-name": {
+          "type": "string",
+          "description": "The name of the repository's git remote that points to GitHub",
+          "default": "origin",
+          "scope": "window"
         }
       }
     },
@@ -63,6 +69,15 @@
         "command": "github-actions.explorer.refresh",
         "category": "GitHub Actions",
         "title": "Refresh",
+        "icon": {
+          "dark": "resources/icons/dark/refresh.svg",
+          "light": "resources/icons/light/refresh.svg"
+        }
+      },
+      {
+        "command": "github-actions.explorer.current-branch.refresh",
+        "category": "GitHub Actions",
+        "title": "Refresh current branch",
         "icon": {
           "dark": "resources/icons/dark/refresh.svg",
           "light": "resources/icons/light/refresh.svg"
@@ -183,6 +198,10 @@
     "views": {
       "github-actions": [
         {
+          "id": "github-actions.current-branch",
+          "name": "Current Branch"
+        },
+        {
           "id": "github-actions.workflows",
           "name": "Workflows"
         },
@@ -207,6 +226,11 @@
           "command": "github-actions.explorer.refresh",
           "group": "navigation",
           "when": "view == github-actions.workflows || view == github-actions.settings"
+        },
+        {
+          "command": "github-actions.explorer.current-branch.refresh",
+          "group": "navigation",
+          "when": "view == github-actions.current-branch"
         }
       ],
       "editor/title": [
@@ -380,7 +404,7 @@
   "dependencies": {
     "@octokit/rest": "18.6.7",
     "abab": "^2.0.5",
-    "github-actions-parser": "0.24.0",
+    "github-actions-parser": "0.26.0",
     "js-yaml": "^3.14.0",
     "ssh-config": "^3.0.0",
     "tunnel": "0.0.6",
